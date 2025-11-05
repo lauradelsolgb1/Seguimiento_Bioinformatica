@@ -1,0 +1,514 @@
+# ==============================================================================
+# Tutorial (comentado) de expresión diferencial de RNA-Seq con DESeq2
+# Proyecto GXA: https://www.ebi.ac.uk/gxa/experiments/E-MTAB-5244/Results
+# Basado en el tutorial original de OMGenomics Labs (2024)
+Preguntarle a simon si el tutorial está en linea
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 0) Preparación del entorno
+#    - BiocManager instala paquetes de Bioconductor (como DESeq2)
+#    - library(DESeq2) carga el paquete para usar sus funciones
+# ------------------------------------------------------------------------------
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")     # se instala solo si no está disponible
+
+BiocManager::install("DESeq2")        # instala DESeq2 (puede tardar)
+library(DESeq2)                       # carga DESeq2 para este script
+
+# ------------------------------------------------------------------------------
+# 1) Descarga de datos (conteos y metadatos) directamente desde GXA/EBI
+#    - 'counts' tendrá conteos crudos por gen (filas) y por muestra (columnas)
+#    - 'metadata' describe cada muestra (por ejemplo, su genotipo)
+# ------------------------------------------------------------------------------
+# Set working directory
+setwd("C:\\Users\\Laura Gonzalez\\Desktop\\transcriptomics")
+
+getwd()
+ #mirar si se puede hacer en disco externo
+
+# Nota: Se usa read.delim porque los archivos están en formato tabulado (.tsv)
+counts <- read.delim(
+  "https://www.ebi.ac.uk/gxa/experiments-content/E-MTAB-5244/resources/DifferentialSecondaryDataFiles.RnaSeq/raw-counts"
+)
+head(counts)   # vistazo rápido a las primeras filas
+          Gene.ID Gene.Name ERR1736465 ERR1736466 ERR1736467 ERR1736468 ERR1736469 ERR1736470
+1 ENSG00000000003    TSPAN6        434        829        334        779        578        602
+2 ENSG00000000005      TNMD          0          0          0          0          0          0
+3 ENSG00000000419      DPM1       2202       3461       1627       4241       3676       3946
+4 ENSG00000000457     SCYL3         45         72         31        119         69         92
+5 ENSG00000000460  C1orf112        320        558        235        516        468        417
+6 ENSG00000000938       FGR          0         10          0          0          0          0
+
+metadata <- read.delim(
+  "https://www.ebi.ac.uk/gxa/experiments-content/E-MTAB-5244/resources/ExperimentDesignFile.RnaSeq/experiment-design"
+)
+head(metadata) # vistazo rápido
+         Run Sample.Characteristic.cell.line. Sample.Characteristic.Ontology.Term.cell.line.
+1 ERR1736465                           HS578T           http://www.ebi.ac.uk/efo/EFO_0001192
+2 ERR1736466                           HS578T           http://www.ebi.ac.uk/efo/EFO_0001192
+3 ERR1736467                           HS578T           http://www.ebi.ac.uk/efo/EFO_0001192
+4 ERR1736468                           HS578T           http://www.ebi.ac.uk/efo/EFO_0001192
+5 ERR1736469                           HS578T           http://www.ebi.ac.uk/efo/EFO_0001192
+6 ERR1736470                           HS578T           http://www.ebi.ac.uk/efo/EFO_0001192
+  Sample.Characteristic.cell.type. Sample.Characteristic.Ontology.Term.cell.type.
+1                  epithelial cell      http://purl.obolibrary.org/obo/CL_0000066
+2                  epithelial cell      http://purl.obolibrary.org/obo/CL_0000066
+3                  epithelial cell      http://purl.obolibrary.org/obo/CL_0000066
+4                  epithelial cell      http://purl.obolibrary.org/obo/CL_0000066
+5                  epithelial cell      http://purl.obolibrary.org/obo/CL_0000066
+6                  epithelial cell      http://purl.obolibrary.org/obo/CL_0000066
+  Sample.Characteristic.disease. Sample.Characteristic.Ontology.Term.disease.
+1               breast carcinoma         http://www.ebi.ac.uk/efo/EFO_0000305
+2               breast carcinoma         http://www.ebi.ac.uk/efo/EFO_0000305
+3               breast carcinoma         http://www.ebi.ac.uk/efo/EFO_0000305
+4               breast carcinoma         http://www.ebi.ac.uk/efo/EFO_0000305
+5               breast carcinoma         http://www.ebi.ac.uk/efo/EFO_0000305
+6               breast carcinoma         http://www.ebi.ac.uk/efo/EFO_0000305
+  Sample.Characteristic.genetic.modification.
+1                                        none
+2                                        none
+3                                        none
+4                              gene knock out
+5                              gene knock out
+6                              gene knock out
+  Sample.Characteristic.Ontology.Term.genetic.modification. Sample.Characteristic.genotype.
+1                      http://www.ebi.ac.uk/efo/EFO_0001461              wild type genotype
+2                      http://www.ebi.ac.uk/efo/EFO_0001461              wild type genotype
+3                      http://www.ebi.ac.uk/efo/EFO_0001461              wild type genotype
+4                      http://www.ebi.ac.uk/efo/EFO_0000506                  Snai1 knockout
+5                      http://www.ebi.ac.uk/efo/EFO_0000506                  Snai1 knockout
+6                      http://www.ebi.ac.uk/efo/EFO_0000506                  Snai1 knockout
+  Sample.Characteristic.Ontology.Term.genotype. Sample.Characteristic.organism.
+1                                            NA                    Homo sapiens
+2                                            NA                    Homo sapiens
+3                                            NA                    Homo sapiens
+4                                            NA                    Homo sapiens
+5                                            NA                    Homo sapiens
+6                                            NA                    Homo sapiens
+  Sample.Characteristic.Ontology.Term.organism. Factor.Value.genotype.
+1 http://purl.obolibrary.org/obo/NCBITaxon_9606     wild type genotype
+2 http://purl.obolibrary.org/obo/NCBITaxon_9606     wild type genotype
+3 http://purl.obolibrary.org/obo/NCBITaxon_9606     wild type genotype
+4 http://purl.obolibrary.org/obo/NCBITaxon_9606         Snai1 knockout
+5 http://purl.obolibrary.org/obo/NCBITaxon_9606         Snai1 knockout
+6 http://purl.obolibrary.org/obo/NCBITaxon_9606         Snai1 knockout
+  Factor.Value.Ontology.Term.genotype. Analysed
+1                                   NA      Yes
+2                                   NA      Yes
+3                                   NA      Yes
+4                                   NA      Yes
+5                                   NA      Yes
+6                                   NA      Yes
+#YO NO QUIERO HACER TODA LA PARTE DEL EXPERIMENTO QUE SE LLEVA A CABO
+#LO QUE ME INTERESA ES SOLO UNA PARTE PEQUEÑA, PREGUNTAR A SIMON SI 
+#TENGO QUE DESCARGAR TODA LA METADATA O SOLO UNA PARTE PARA QUE COINCIDA EN VALORES
+
+# ------------------------------------------------------------------------------
+# 2) Acomodar los datos al formato que DESeq2 espera
+#    - Filas de 'counts' = genes (con sus IDs en rownames)
+#    - Columnas de 'counts' = muestras (los nombres deben coincidir con metadata)
+#    - Rownames de 'metadata' = IDs de muestra
+# ------------------------------------------------------------------------------
+# 2.1) Poner los IDs de gen como nombres de fila en 'counts'
+#      Esto facilita que DESeq2 identifique cada gen.
+rownames(counts) <- counts$Gene.ID
+head(counts[, 1:6])  # revisar algunas columnas de conteos
+                        Gene.ID Gene.Name ERR1736465 ERR1736466 ERR1736467 ERR1736468
+ENSG00000000003 ENSG00000000003    TSPAN6        434        829        334        779
+ENSG00000000005 ENSG00000000005      TNMD          0          0          0          0
+ENSG00000000419 ENSG00000000419      DPM1       2202       3461       1627       4241
+
+# 2.2) Guardar columnas útiles (ID y nombre del gen) para referencia posterior
+genes  <- counts[, c("Gene.ID", "Gene.Name")]
+
+# 2.3) Eliminar de 'counts' las columnas que no son conteos (las 2 primeras)
+#      (Esto deja solo números de conteo por muestra, pero me iagino que útil)
+counts <- counts[, -c(1, 2)]
+head(counts[, 1:6])#comparar si mi muestra es parecida a la que se trabajó
+#Ni idea de qué está haciendo 
+                ERR1736465 ERR1736466 ERR1736467 ERR1736468 ERR1736469 ERR1736470
+ENSG00000000003        434        829        334        779        578        602
+ENSG00000000005          0          0          0          0          0          0
+ENSG00000000419       2202       3461       1627       4241       3676       3946
+ENSG00000000457         45         72         31        119         69         92
+ENSG00000000460        320        558        235        516        468        417
+ENSG00000000938          0         10          0          0          0          0
+
+# 2.4) Poner los IDs de muestra como rownames en 'metadata'
+#      'Run' suele ser el identificador único de cada muestra en EBI/GXA.
+rownames(metadata) <- metadata$Run
+head(metadata)
+
+# 2.5) Quedarnos solo con la columna del factor experimental de interés
+#      Aquí nos interesa el genotipo. 'drop=FALSE' asegura que siga siendo data.frame.
+metadata <- metadata[, c("Sample.Characteristic.genotype."), drop = FALSE]
+metadata
+#preguntar eso pa que 
+                  Run Sample.Characteristic.cell.line.
+ERR1736465 ERR1736465                           HS578T
+ERR1736466 ERR1736466                           HS578T
+ERR1736467 ERR1736467                           HS578T
+ERR1736468 ERR1736468                           HS578T
+ERR1736469 ERR1736469                           HS578T
+ERR1736470 ERR1736470                           HS578T
+           Sample.Characteristic.Ontology.Term.cell.line. Sample.Characteristic.cell.type.
+ERR1736465           http://www.ebi.ac.uk/efo/EFO_0001192                  epithelial cell
+ERR1736466           http://www.ebi.ac.uk/efo/EFO_0001192                  epithelial cell
+ERR1736467           http://www.ebi.ac.uk/efo/EFO_0001192                  epithelial cell
+ERR1736468           http://www.ebi.ac.uk/efo/EFO_0001192                  epithelial cell
+ERR1736469           http://www.ebi.ac.uk/efo/EFO_0001192                  epithelial cell
+ERR1736470           http://www.ebi.ac.uk/efo/EFO_0001192                  epithelial cell
+           Sample.Characteristic.Ontology.Term.cell.type. Sample.Characteristic.disease.
+ERR1736465      http://purl.obolibrary.org/obo/CL_0000066               breast carcinoma
+ERR1736466      http://purl.obolibrary.org/obo/CL_0000066               breast carcinoma
+ERR1736467      http://purl.obolibrary.org/obo/CL_0000066               breast carcinoma
+ERR1736468      http://purl.obolibrary.org/obo/CL_0000066               breast carcinoma
+ERR1736469      http://purl.obolibrary.org/obo/CL_0000066               breast carcinoma
+ERR1736470      http://purl.obolibrary.org/obo/CL_0000066               breast carcinoma
+           Sample.Characteristic.Ontology.Term.disease.
+ERR1736465         http://www.ebi.ac.uk/efo/EFO_0000305
+ERR1736466         http://www.ebi.ac.uk/efo/EFO_0000305
+ERR1736467         http://www.ebi.ac.uk/efo/EFO_0000305
+ERR1736468         http://www.ebi.ac.uk/efo/EFO_0000305
+ERR1736469         http://www.ebi.ac.uk/efo/EFO_0000305
+ERR1736470         http://www.ebi.ac.uk/efo/EFO_0000305
+           Sample.Characteristic.genetic.modification.
+ERR1736465                                        none
+ERR1736466                                        none
+ERR1736467                                        none
+ERR1736468                              gene knock out
+ERR1736469                              gene knock out
+ERR1736470                              gene knock out
+           Sample.Characteristic.Ontology.Term.genetic.modification.
+ERR1736465                      http://www.ebi.ac.uk/efo/EFO_0001461
+ERR1736466                      http://www.ebi.ac.uk/efo/EFO_0001461
+ERR1736467                      http://www.ebi.ac.uk/efo/EFO_0001461
+ERR1736468                      http://www.ebi.ac.uk/efo/EFO_0000506
+ERR1736469                      http://www.ebi.ac.uk/efo/EFO_0000506
+ERR1736470                      http://www.ebi.ac.uk/efo/EFO_0000506
+           Sample.Characteristic.genotype. Sample.Characteristic.Ontology.Term.genotype.
+ERR1736465              wild type genotype                                            NA
+ERR1736466              wild type genotype                                            NA
+ERR1736467              wild type genotype                                            NA
+ERR1736468                  Snai1 knockout                                            NA
+ERR1736469                  Snai1 knockout                                            NA
+ERR1736470                  Snai1 knockout                                            NA
+           Sample.Characteristic.organism. Sample.Characteristic.Ontology.Term.organism.
+ERR1736465                    Homo sapiens http://purl.obolibrary.org/obo/NCBITaxon_9606
+ERR1736466                    Homo sapiens http://purl.obolibrary.org/obo/NCBITaxon_9606
+ERR1736467                    Homo sapiens http://purl.obolibrary.org/obo/NCBITaxon_9606
+ERR1736468                    Homo sapiens http://purl.obolibrary.org/obo/NCBITaxon_9606
+ERR1736469                    Homo sapiens http://purl.obolibrary.org/obo/NCBITaxon_9606
+ERR1736470                    Homo sapiens http://purl.obolibrary.org/obo/NCBITaxon_9606
+           Factor.Value.genotype. Factor.Value.Ontology.Term.genotype. Analysed
+ERR1736465     wild type genotype                                   NA      Yes
+ERR1736466     wild type genotype                                   NA      Yes
+ERR1736467     wild type genotype                                   NA      Yes
+ERR1736468         Snai1 knockout                                   NA      Yes
+ERR1736469         Snai1 knockout                                   NA      Yes
+ERR1736470         Snai1 knockout                                   NA      Yes
+> # 2.5) Quedarnos solo con la columna del factor experimental de interés
+> #      Aquí nos interesa el genotipo. 'drop=FALSE' asegura que siga siendo data.frame.
+> metadata <- metadata[, c("Sample.Characteristic.genotype."), drop = FALSE]
+> metadata
+           Sample.Characteristic.genotype.
+ERR1736465              wild type genotype
+ERR1736466              wild type genotype
+ERR1736467              wild type genotype
+ERR1736468                  Snai1 knockout
+ERR1736469                  Snai1 knockout
+ERR1736470                  Snai1 knockout
+> # 2.6) Renombrar la columna a algo simple (evita errores y hace el código legible)
+> colnames(metadata) <- "genotipo"
+> metadata
+                     genotipo
+ERR1736465 wild type genotype
+ERR1736466 wild type genotype
+ERR1736467 wild type genotype
+ERR1736468     Snai1 knockout
+ERR1736469     Snai1 knockout
+ERR1736470     Snai1 knockout
+
+# 2.6) Renombrar la columna a algo simple (evita errores y hace el código legible)
+colnames(metadata) <- "genotipo"
+metadata
+
+# 2.7) Limpiar etiquetas para que no haya espacios raros:
+#      - Pasamos de 'wild type genotype' a 'wildtype'
+#      - Pasamos de 'Snai1 knockout' a 'knockout'
+#en mi caso son 0 y 72, mirar eso 
+metadata$genotipo[metadata$genotipo == "wild type genotype"] <- "wildtype"
+metadata$genotipo[metadata$genotipo == "Snai1 knockout"]     <- "knockout"
+metadata
+
+# 2.8) Declarar 'genotipo' como factor y fijar el orden (referencia primero)
+#      - Esto define cómo se interpretan los contrastes (comparaciones)
+metadata$genotipo <- factor(metadata$genotipo, levels = c("wildtype", "knockout"))
+metadata$genotipo
+[1] wildtype wildtype wildtype knockout knockout knockout
+Levels: wildtype knockout
+#me imagino que los levels son importantes 
+# ------------------------------------------------------------------------------
+# 3) Chequeo rápido: expresión del gen SNAI1 (esperamos menor en knockout 
+#COMO SE ESO DESDE LO QUE ME IMPRIME) Es algo que si se puede hacer con mi trabajo, mirar bien 
+#    - Buscamos el ID del gen usando su nombre (Gene.Name == 'SNAI1')
+#    - Extraemos los conteos de ese gen en todas las muestras
+#    - Creamos una tablita con metadatos + conteos para graficar
+# ------------------------------------------------------------------------------
+gene_id     <- genes$Gene.ID[genes$Gene.Name == "SNAI1"]  # ID de SNAI1
+gene_counts <- counts[gene_id, ]                           # vector de conteos por muestra
+gene_counts
+
+# cbind: "pega" columnas. as.numeric asegura que el vector sea numérico simple.
+gene_data <- cbind(metadata, counts = as.numeric(gene_counts))
+gene_data
+           genotipo counts
+ERR1736465 wildtype     78
+ERR1736466 wildtype    140
+ERR1736467 wildtype     47
+ERR1736468 knockout      9
+
+
+# Boxplot por grupo (wildtype vs knockout)
+library(ggplot2)
+ggplot(gene_data, aes(x = genotipo, y = counts, fill = genotipo)) +
+  geom_boxplot() +
+  labs(title = "Conteos crudos de SNAI1 por genotipo",
+       x = "Genotipo",
+       y = "Conteos (sin normalizar)")
+       #preguntar por esta parte del codigo, pues gene_counts es la que tiene a SNAI
+
+# ------------------------------------------------------------------------------
+# 4) Crear el objeto DESeq y correr el análisis
+#    - design = ~ genotipo indica que queremos probar diferencias por genotipo
+#    - Filtramos genes muy poco expresados (ruido) para evitar falsos positivos
+# ------------------------------------------------------------------------------
+dds <- DESeqDataSetFromMatrix(countData = counts,
+                              colData   = metadata,
+                              design    = ~ genotipo)
+
+# Filtrar genes con baja suma de conteos (aquí umbral > 10 es un ejemplo simple)
+dds <- dds[rowSums(counts(dds)) > 10, ] #buscar mi umbral 
+
+# Ejecuta la estimación de tamaños, dispersión y el modelo (Wald por defecto)
+dds <- DESeq(dds)
+
+# ------------------------------------------------------------------------------
+# 5) Extraer resultados del contraste de interés
+#    - contrast = c("genotipo", "knockout", "wildtype") = knockout vs wildtype
+#    - alpha = 1e-5 define el umbral FDR (padj) para marcar significancia (muy estricto)
+#    - log2FoldChange se interpreta como log2(knockout / wildtype)
+# ------------------------------------------------------------------------------
+res <- results(dds, contrast = c("genotipo", "knockout", "wildtype"), alpha = 1e-5)
+head(res)
+log2 fold change (MLE): genotipo knockout vs wildtype 
+Wald test p-value: genotipo knockout vs wildtype 
+DataFrame with 6 rows and 6 columns
+                 baseMean log2FoldChange     lfcSE      stat      pvalue        padj
+                <numeric>      <numeric> <numeric> <numeric>   <numeric>   <numeric>
+ENSG00000000003  568.5316     -0.2903533 0.1261435 -2.301770 2.13481e-02 5.96143e-02
+ENSG00000000419 3024.9379      0.0891282 0.0789213  1.129330 2.58759e-01 4.07675e-01
+ENSG00000000457   65.7412      0.3041820 0.3127229  0.972688 3.30708e-01 4.86401e-01
+ENSG00000000460  404.3696     -0.2564221 0.1472147 -1.741823 8.15393e-02 1.68878e-01
+ENSG00000001036 2665.7312     -0.0481428 0.0970109 -0.496262 6.19709e-01 7.47444e-01
+ENSG00000001084 2025.6506     -0.6079597 0.1215264 -5.002698 5.65334e-07 5.63908e-06
+
+
+# ------------------------------------------------------------------------------
+# 6) (Opcional) Otros diseños comunes
+#    Ideas de cómo escribir fórmulas cuando hay varias variables
+# ------------------------------------------------------------------------------
+# - https://www.ebi.ac.uk/gxa/experiments/E-MTAB-8031/Results
+#   * RNA-seq en tumores pulmonares
+#   * Variables: localización (tumor vs tejido normal), sexo del paciente
+#   * Fórmula = ~ sexo + localización
+#
+# - https://www.ebi.ac.uk/gxa/experiments/E-MTAB-10041/Results
+#   * RNA-seq en colon de ratón
+#   * Variables: compuesto (fármaco sí/no) y genotipo (WT + mutaciones TP53)
+#   * Fórmula = ~ genotipo + compuesto  (no adecuada si quieres comparar cada genotipo por separado)
+#   * Alternativa: crear un grupo combinado
+#       metadata$grupo <- factor(paste(metadata$genotipo, metadata$compuesto))
+#       design = ~ grupo
+
+# Nota: "~" es la sintaxis de fórmulas en R (no es algo especial de DESeq2)
+head(iris)
+modelo <- lm(Petal.Width ~ Petal.Length, iris)
+plot(iris$Petal.Length, iris$Petal.Width)
+abline(modelo)
+
+# ------------------------------------------------------------------------------
+# 7) Spot checks: comparar algunos genes con la interfaz de GXA, qué interfaz
+#    - Convertimos 'res' a data.frame y unimos los nombres de genes
+#    - Buscamos genes de interés y revisamos sus resultados
+# ------------------------------------------------------------------------------
+res_df <- as.data.frame(res)
+head(res_df)
+                  baseMean log2FoldChange      lfcSE       stat       pvalue         padj
+ENSG00000000003  568.53155    -0.29035333 0.12614348 -2.3017704 2.134813e-02 5.961427e-02
+ENSG00000000419 3024.93792     0.08912822 0.07892131  1.1293302 2.587586e-01 4.076753e-01
+ENSG00000000457   65.74124     0.30418198 0.31272292  0.9726885 3.307081e-01 4.864009e-01
+ENSG00000000460  404.36962    -0.25642207 0.14721473 -1.7418234 8.153935e-02 1.688783e-01
+ENSG00000001036 2665.73118    -0.04814284 0.09701088 -0.4962623 6.197093e-01 7.474436e-01
+ENSG00000001084 2025.65061    -0.60795968 0.12152635 -5.0026984 5.653336e-07 5.639076e-06
+
+head(genes)
+                        Gene.ID Gene.Name
+ENSG00000000003 ENSG00000000003    TSPAN6
+ENSG00000000005 ENSG00000000005      TNMD
+ENSG00000000419 ENSG00000000419      DPM1
+ENSG00000000457 ENSG00000000457     SCYL3
+ENSG00000000460 ENSG00000000460  C1orf112
+ENSG00000000938 ENSG00000000938       FGR
+
+
+# merge por el identificador de fila (Row.names) que contiene el ID del gen
+res_df <- merge(res_df, genes, by = "row.names")
+head(res_df)
+        Row.names   baseMean log2FoldChange      lfcSE       stat       pvalue         padj
+1 ENSG00000000003  568.53155    -0.29035333 0.12614348 -2.3017704 2.134813e-02 5.961427e-02
+2 ENSG00000000419 3024.93792     0.08912822 0.07892131  1.1293302 2.587586e-01 4.076753e-01
+3 ENSG00000000457   65.74124     0.30418198 0.31272292  0.9726885 3.307081e-01 4.864009e-01
+4 ENSG00000000460  404.36962    -0.25642207 0.14721473 -1.7418234 8.153935e-02 1.688783e-01
+5 ENSG00000001036 2665.73118    -0.04814284 0.09701088 -0.4962623 6.197093e-01 7.474436e-01
+6 ENSG00000001084 2025.65061    -0.60795968 0.12152635 -5.0026984 5.653336e-07 5.639076e-06
+          Gene.ID Gene.Name
+1 ENSG00000000003    TSPAN6
+2 ENSG00000000419      DPM1
+3 ENSG00000000457     SCYL3
+4 ENSG00000000460  C1orf112
+5 ENSG00000001036     FUCA2
+6 ENSG00000001084      GCLC
+
+genes_a_verificar <- c("THY1", "SFMBT2", "PASD1", "SNAI1")
+res_df[res_df$Gene.Name %in% genes_a_verificar, ]
+#en el head que imprime no veo los genes , ahh si , hacerlo para el mio 
+            Row.names   baseMean log2FoldChange     lfcSE      stat       pvalue         padj
+4078  ENSG00000124216   53.88646      -4.155055 0.4547677 -9.136655 6.441369e-20 3.263006e-18
+7087  ENSG00000154096 3146.01390      12.371934 0.8406168 14.717685 4.963618e-49 1.106345e-46
+8402  ENSG00000166049  251.22854      11.075918 1.1921449  9.290748 1.532072e-20 8.576103e-19
+11913 ENSG00000198879  260.22214     -11.807534 1.2088618 -9.767480 1.552653e-22 1.034455e-20
+              Gene.ID Gene.Name
+4078  ENSG00000124216     SNAI1
+7087  ENSG00000154096      THY1
+8402  ENSG00000166049     PASD1
+11913 ENSG00000198879    SFMBT2
+
+# ------------------------------------------------------------------------------
+# 8) Visualizaciones rápidas
+#    - MA plot: muestra relación entre abundancia media y cambio de expresión
+#    - Volcano plot: log2FC vs significancia (p-value)
+# ------------------------------------------------------------------------------
+plotMA(res)  # puntos rojos suelen ser genes significativos
+
+# EnhancedVolcano: paquete externo para volcanos bonitos (se instala si no está)
+BiocManager::install("EnhancedVolcano")
+library(EnhancedVolcano)
+EnhancedVolcano(res,
+                lab = rownames(res),
+                x   = "log2FoldChange",
+                y   = "pvalue",
+                title = "Volcano plot: knockout vs wildtype")
+
+# ------------------------------------------------------------------------------
+# 9) (Opcional) Anotación genómica con biomaRt para hacer gráficos tipo circos
+#    - Esto consulta Ensembl para obtener coordenadas de genes
+#    - Útil si quieres mapear resultados a cromosomas (más avanzado)
+#creo que no es necesario para mi
+# ------------------------------------------------------------------------------
+BiocManager::install("biomaRt")
+library(biomaRt)
+
+# Selección del biomart y dataset: aquí buscamos el que corresponde a humano
+ensembl  <- useEnsembl(biomart = "genes")
+datasets <- listDatasets(ensembl)
+head(datasets)
+
+dataset_nb <- grep("human", datasets$description, ignore.case = TRUE)
+dataset    <- datasets$dataset[dataset_nb]
+dataset
+
+[1] "hsapiens_gene_ensembl"
+# Fijamos el dataset elegido
+ensembl <- useDataset(dataset = dataset, mart = ensembl)
+
+# Pedimos coordenadas de TODOS los genes (esto puede tardar)
+atributos        <- c("ensembl_gene_id", "chromosome_name", "start_position", "end_position")
+valores          <- list(ensembl_gene_id = c())
+todos_los_genes  <- getBM(attributes = atributos, values = valores, mart = ensembl)
+head(todos_los_genes)
+  ensembl_gene_id chromosome_name start_position end_position
+1 ENSG00000210049              MT            577          647
+2 ENSG00000211459              MT            648         1601
+3 ENSG00000210077              MT           1602         1670
+
+
+# Renombramos para que coincida con la columna usada en res_df
+colnames(todos_los_genes)[1] <- "Gene.ID"
+head(todos_los_genes) 
+#yo lo veo igual 
+          Gene.ID chromosome_name start_position end_position
+1 ENSG00000210049              MT            577          647
+2 ENSG00000211459              MT            648         1601
+3 ENSG00000210077              MT           1602         1670
+4 ENSG00000210082              MT           1671         3229
+5 ENSG00000209082              MT           3230         3304
+
+# Unimos resultados de DESeq con las coordenadas genómicas
+datos_unidos <- merge(todos_los_genes, res_df, by = "Gene.ID")
+head(datos_unidos)
+          Gene.ID chromosome_name start_position end_position       Row.names   baseMean
+1 ENSG00000000003               X      100627108    100639991 ENSG00000000003  568.53155
+2 ENSG00000000419              20       50934852     50959140 ENSG00000000419 3024.93792
+3 ENSG00000000457               1      169846981    169894267 ENSG00000000457   65.74124
+4 ENSG00000000460               1      169662007    169855456 ENSG00000000460  404.36962
+5 ENSG00000001036               6      143493961    143511842 ENSG00000001036 2665.73118
+6 ENSG00000001084               6       53497341     53616970 ENSG00000001084 2025.65061
+  log2FoldChange      lfcSE       stat       pvalue         padj Gene.Name
+1    -0.29035333 0.12614348 -2.3017704 2.134813e-02 5.961427e-02    TSPAN6
+2     0.08912822 0.07892131  1.1293302 2.587586e-01 4.076753e-01      DPM1
+3     0.30418198 0.31272292  0.9726885 3.307081e-01 4.864009e-01     SCYL3
+4    -0.25642207 0.14721473 -1.7418234 8.153935e-02 1.688783e-01  C1orf112
+5    -0.04814284 0.09701088 -0.4962623 6.197093e-01 7.474436e-01     FUCA2
+6    -0.60795968 0.12152635 -5.0026984 5.653336e-07 5.639076e-06      GCLC
+#con esto se pueden hacer grafiquitas, tal vez no necesite el cromosoma pero 
+#si creo que necesito alinear con el genoma humano 
+ 
+
+# Añadimos "chr" delante del nombre del cromosoma (formato común en varios tools)
+datos_unidos$chromosome_name <- paste0("chr", datos_unidos$chromosome_name)
+head(datos_unidos)
+#sirve para casi nada, ya teniamos el cromosoma antes, solo faltaba el nombre 
+        Gene.ID chromosome_name start_position end_position       Row.names   baseMean
+1 ENSG00000000003            chrX      100627108    100639991 ENSG00000000003  568.53155
+2 ENSG00000000419           chr20       50934852     50959140 ENSG00000000419 3024.93792
+3 ENSG00000000457            chr1      169846981    169894267 ENSG00000000457   65.74124
+4 ENSG00000000460            chr1      169662007    169855456 ENSG00000000460  404.36962
+5 ENSG00000001036            chr6      143493961    143511842 ENSG00000001036 2665.73118
+6 ENSG00000001084            chr6       53497341     53616970 ENSG00000001084 2025.65061
+  log2FoldChange      lfcSE       stat       pvalue         padj Gene.Name
+1    -0.29035333 0.12614348 -2.3017704 2.134813e-02 5.961427e-02    TSPAN6
+2     0.08912822 0.07892131  1.1293302 2.587586e-01 4.076753e-01      DPM1
+3     0.30418198 0.31272292  0.9726885 3.307081e-01 4.864009e-01     SCYL3
+4    -0.25642207 0.14721473 -1.7418234 8.153935e-02 1.688783e-01  C1orf112
+5    -0.04814284 0.09701088 -0.4962623 6.197093e-01 7.474436e-01     FUCA2
+6    -0.60795968 0.12152635 -5.0026984 5.653336e-07 5.639076e-06      GCLC
+
+
+# Guardamos CSVs para análisis/visualización externa (por ejemplo, en R o Python)
+write.csv(datos_unidos,"deseq.csv", row.names = FALSE)
+subset_datos_unidos <- datos_unidos[datos_unidos$Gene.Name %in% genes_a_verificar, ]
+write.csv(subset_datos_unidos,"deseq_subset.csv",  row.names = FALSE)
+
+# ------------------------------------------------------------------------------
+# 10) IMPORTANTISIMO Consejos prácticos y errores comunes (para estudiantes)
+#    - Asegúrate de que colnames(counts) == rownames(metadata) PERO IGUAL DE QUÉ
+#    - 'genotipo' DEBE ser factor y con niveles en el orden correcto
+#    - No uses resultados crudos sin filtrar genes de muy baja expresión AHHH OSEA QUE PREGUNTARLE A SIMON POR LOS YA FILTRADOS 
+#    - Usa 'padj' (FDR) para interpretar significancia, no solo 'pvalue'
+#    - Si algo falla, revisa: dimensiones, nombres de filas/columnas y tipos (factor vs char)
+# ------------------------------------------------------------------------------
+
+
+# Copyright (c) 2024 OMGenomics Labs
